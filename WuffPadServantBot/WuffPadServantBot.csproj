@@ -44,9 +44,17 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="XMLClasses\XmlLanguage.cs" />
+    <Compile Include="XMLClasses\XmlString.cs" />
+    <Compile Include="XMLClasses\XmlStrings.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Crazypokemondev.TelegramBotApi">
+      <Version>1.0.12</Version>
+    </PackageReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
