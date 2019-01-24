@@ -6,9 +6,10 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
-using TelegramBotApi;
-using TelegramBotApi.Types.Events;
-using TelegramBotApi.Types.Upload;
+using Telegram.Bot;
+using Telegram.Bot.Args;
+using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.InputFiles;
 using WuffPadServantBot.XMLClasses;
 
 namespace WuffPadServantBot
@@ -16,10 +17,10 @@ namespace WuffPadServantBot
     class Program
     {
         private const string tempFilePath = "temp.xml";
-        private static TelegramBot Bot;
+        private static TelegramBotClient Bot;
         static void Main(string[] args)
         {
-            Bot = new TelegramBot(args[0]);
+            Bot = new TelegramBotClient(args[0]);
 
             Bot.OnMessage += Bot_OnMessage;
 
@@ -36,13 +37,16 @@ namespace WuffPadServantBot
 
         private static void Bot_OnMessage(object sender, MessageEventArgs e)
         {
-            if (e.Message.Type != TelegramBotApi.Enums.MessageType.Document) return;
+            if (e.Message.Type != MessageType.Document) return;
             if (e.Message.Document.FileName != "Deutsch.xml") return;
 
             Console.WriteLine("Received a file!");
             Console.WriteLine("Downloading...");
-            Bot.DownloadFileAsync(e.Message.Document.FileId, tempFilePath).Wait();
-
+            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+            using (var stream = File.OpenWrite(tempFilePath))
+            {
+                Bot.DownloadFileAsync(e.Message.Document.FileId, stream).Wait();
+            }
             Console.WriteLine("Processing...");
             XmlStrings newFile = MakeNewFile();
             newFile.Language.Variant = "Shcreibfelher";
@@ -53,8 +57,14 @@ namespace WuffPadServantBot
             File.WriteAllText("Deutsch Shcreibfelher.xml", newFileString);
 
             Console.WriteLine("Sending...");
-            SendFileMultipart sendFile = new SendFileMultipart("Deutsch Shcreibfelher.xml");
-            Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile).Wait();
+            using (var stream = File.OpenRead("Deutsch Shcreibfelher.xml"))
+            {
+                InputOnlineFile sendFile = new InputOnlineFile(stream)
+                {
+                    FileName = "Deutsch Shcreibfelher.xml"
+                };
+                Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile).Wait();
+            }
 
             Console.WriteLine("Cleaning up...");
             File.Delete(tempFilePath);
