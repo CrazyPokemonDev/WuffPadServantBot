@@ -1,15 +1,153 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
+using TelegramBotApi;
+using TelegramBotApi.Types.Events;
+using TelegramBotApi.Types.Upload;
+using WuffPadServantBot.XMLClasses;
 
 namespace WuffPadServantBot
 {
     class Program
     {
+        private const string tempFilePath = "temp.xml";
+        private static TelegramBot Bot;
         static void Main(string[] args)
         {
+            Bot = new TelegramBot(args[0]);
+
+            Bot.OnMessage += Bot_OnMessage;
+
+            Bot.StartReceiving();
+
+            string input;
+            do
+            {
+                input = Console.ReadLine();
+            } while (input.ToLower() != "exit");
+
+            Bot.StopReceiving();
+        }
+
+        private static void Bot_OnMessage(object sender, MessageEventArgs e)
+        {
+            if (e.Message.Type != TelegramBotApi.Enums.MessageType.Document) return;
+            if (e.Message.Document.FileName != "Deutsch.xml") return;
+
+            Console.WriteLine("Received a file!");
+            Console.WriteLine("Downloading...");
+            Bot.DownloadFileAsync(e.Message.Document.FileId, tempFilePath).Wait();
+
+            Console.WriteLine("Processing...");
+            XmlStrings newFile = MakeNewFile();
+            newFile.Language.Variant = "Shcreibfelher";
+            newFile.Language.Name = "Deutsch Schreibfehler";
+            newFile.Language.Owner = "WWUebersetzen";
+
+            string newFileString = SerializeXmlToString(newFile);
+            File.WriteAllText("Deutsch Shcreibfelher.xml", newFileString);
+
+            Console.WriteLine("Sending...");
+            SendFileMultipart sendFile = new SendFileMultipart("Deutsch Shcreibfelher.xml");
+            Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile).Wait();
+
+            Console.WriteLine("Cleaning up...");
+            File.Delete(tempFilePath);
+            File.Delete("Deutsch Shcreibfelher.xml");
+
+            Console.WriteLine("Done!");
+        }
+
+        private static XmlStrings MakeNewFile()
+        {
+            string fileString = File.ReadAllText(tempFilePath);
+            XmlStrings file = ReadXmlString(fileString);
+            XmlStrings newFile = new XmlStrings()
+            {
+                Language = file.Language
+            };
+            Regex regex = new Regex(@"[^\@]\b(\w)+\b");
+            Regex number = new Regex(@"\d+");
+            foreach (XmlString str in file.Strings)
+            {
+                XmlString newStr = new XmlString()
+                {
+                    Isgif = str.Isgif,
+                    Key = str.Key
+                };
+                foreach (string value in str.Values)
+                {
+                    Dictionary<string, string> replace = new Dictionary<string, string>();
+                    foreach (var m in regex.Matches(value.Replace("\\n", "\n")))
+                    {
+                        string match = m.ToString();
+                        if (number.IsMatch(match) || match.Length < 3)
+                        {
+                            continue;
+                        }
+                        Random rnd = new Random();
+                        string first = match.Substring(0, 1);
+                        string last = match.Substring(match.Length - 1);
+                        string proc = match.Substring(1, match.Length - 2);
+                        string output = first;
+                        char[] chars = new char[proc.Length];
+                        var randomNumbers = Enumerable.Range(0, proc.Length).OrderBy(x => rnd.Next()).Take(proc.Length).ToList();
+                        for (int i = 0; i < proc.Length; i++)
+                        {
+                            chars[i] = proc[randomNumbers[i]];
+                        }
+                        foreach (var c in chars)
+                        {
+                            output += c;
+                        }
+                        output += last;
+                        if (!replace.ContainsKey(match)) replace.Add(match, output);
+                    }
+                    string newValue = value.Replace("\\n", "\n");
+                    foreach (var kvp in replace)
+                    {
+                        newValue = newValue.Replace(kvp.Key, kvp.Value);
+                    }
+                    newStr.Values.Add(newValue.Replace("\n", "\\n"));
+                }
+                newFile.Strings.Add(newStr);
+            }
+            return newFile;
+        }
+
+        private static XmlStrings ReadXmlString(string fileString)
+        {
+            XmlStrings result;
+            try
+            {
+                XmlSerializer serializer = new XmlSerializer(typeof(XmlStrings));
+                using (TextReader tr = new StringReader(fileString))
+                {
+                    result = (XmlStrings)serializer.Deserialize(tr);
+                }
+                return result;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string SerializeXmlToString(XmlStrings xmls)
+        {
+            XmlSerializer serializer = new XmlSerializer(typeof(XmlStrings));
+            using (TextWriter tw = new StringWriter())
+            {
+                serializer.Serialize(tw, xmls);
+                string result = tw.ToString();
+                //result = Utf16ToUtf8(result);
+                return result.Replace("utf-16", "utf-8");
+            }
         }
     }
 }
