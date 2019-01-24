@@ -45,7 +45,7 @@ namespace WuffPadServantBot
             if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             using (var stream = File.OpenWrite(tempFilePath))
             {
-                Bot.DownloadFileAsync(e.Message.Document.FileId, stream).Wait();
+                Bot.DownloadFileAsync(Bot.GetFileAsync(e.Message.Document.FileId).Result.FilePath, stream).Wait();
             }
             Console.WriteLine("Processing...");
             XmlStrings newFile = MakeNewFile();
