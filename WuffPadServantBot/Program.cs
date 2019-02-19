@@ -18,6 +18,8 @@ namespace WuffPadServantBot
     {
         private const string tempFilePath = "temp.xml";
         private static TelegramBotClient Bot;
+        private static Regex regex = new Regex(@"[^\@]\b(\w)+\b");
+        private static Regex number = new Regex(@"\d+");
         static void Main(string[] args)
         {
             Bot = new TelegramBotClient(args[0]);
@@ -63,7 +65,7 @@ namespace WuffPadServantBot
                 {
                     FileName = "Deutsch Shcreibfelher.xml"
                 };
-                Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile).Wait();
+                Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile, caption: e.Message.Caption == null ? null : Randify(e.Message.Caption)).Wait();
             }
 
             Console.WriteLine("Cleaning up...");
@@ -81,8 +83,6 @@ namespace WuffPadServantBot
             {
                 Language = file.Language
             };
-            Regex regex = new Regex(@"[^\@]\b(\w)+\b");
-            Regex number = new Regex(@"\d+");
             foreach (XmlString str in file.Strings)
             {
                 XmlString newStr = new XmlString()
@@ -92,42 +92,49 @@ namespace WuffPadServantBot
                 };
                 foreach (string value in str.Values)
                 {
-                    Dictionary<string, string> replace = new Dictionary<string, string>();
-                    foreach (var m in regex.Matches(value.Replace("\\n", "\n")))
-                    {
-                        string match = m.ToString();
-                        if (number.IsMatch(match) || match.Length < 3)
-                        {
-                            continue;
-                        }
-                        Random rnd = new Random();
-                        string first = match.Substring(0, 1);
-                        string last = match.Substring(match.Length - 1);
-                        string proc = match.Substring(1, match.Length - 2);
-                        string output = first;
-                        char[] chars = new char[proc.Length];
-                        var randomNumbers = Enumerable.Range(0, proc.Length).OrderBy(x => rnd.Next()).Take(proc.Length).ToList();
-                        for (int i = 0; i < proc.Length; i++)
-                        {
-                            chars[i] = proc[randomNumbers[i]];
-                        }
-                        foreach (var c in chars)
-                        {
-                            output += c;
-                        }
-                        output += last;
-                        if (!replace.ContainsKey(match)) replace.Add(match, output);
-                    }
-                    string newValue = value.Replace("\\n", "\n");
-                    foreach (var kvp in replace)
-                    {
-                        newValue = newValue.Replace(kvp.Key, kvp.Value);
-                    }
-                    newStr.Values.Add(newValue.Replace("\n", "\\n"));
+                    string newValue = Randify(value);
+                    newStr.Values.Add(newValue);
                 }
                 newFile.Strings.Add(newStr);
             }
             return newFile;
+        }
+
+        private static string Randify(string value)
+        {
+            Dictionary<string, string> replace = new Dictionary<string, string>();
+            foreach (Match m in regex.Matches(value.Replace("\\n", "\n")))
+            {
+                string match = m.Value.Trim();
+                if (number.IsMatch(match) || match.Length < 3)
+                {
+                    continue;
+                }
+                Random rnd = new Random();
+                string first = match.Substring(0, 1);
+                string last = match.Substring(match.Length - 1);
+                string proc = match.Substring(1, match.Length - 2);
+                string output = first;
+                char[] chars = new char[proc.Length];
+                var randomNumbers = Enumerable.Range(0, proc.Length).OrderBy(x => rnd.Next()).Take(proc.Length).ToList();
+                for (int i = 0; i < proc.Length; i++)
+                {
+                    chars[i] = proc[randomNumbers[i]];
+                }
+                foreach (var c in chars)
+                {
+                    output += c;
+                }
+                output += last;
+                if (!replace.ContainsKey(match)) replace.Add(match, output);
+            }
+            string newValue = value.Replace("\\n", "\n");
+            foreach (var kvp in replace)
+            {
+                newValue = newValue.Replace(kvp.Key, kvp.Value);
+            }
+
+            return newValue.Replace("\n", "\\n");
         }
 
         private static XmlStrings ReadXmlString(string fileString)
