@@ -2,9 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Xml.Serialization;
 using Telegram.Bot;
 using Telegram.Bot.Args;
@@ -20,6 +18,8 @@ namespace WuffPadServantBot
         private static TelegramBotClient Bot;
         private static Regex regex = new Regex(@"[^\@]\b(\w)+\b");
         private static Regex number = new Regex(@"\d+");
+        private static Random rnd = new Random();
+        private const int newValueCount = 3;
         static void Main(string[] args)
         {
             Bot = new TelegramBotClient(args[0]);
@@ -92,8 +92,7 @@ namespace WuffPadServantBot
                 };
                 foreach (string value in str.Values)
                 {
-                    string newValue = Randify(value);
-                    newStr.Values.Add(newValue);
+                    for (int i = 0; i < newValueCount; i++) newStr.Values.Add(Randify(value));
                 }
                 newFile.Strings.Add(newStr);
             }
@@ -106,26 +105,29 @@ namespace WuffPadServantBot
             foreach (Match m in regex.Matches(value.Replace("\\n", "\n")))
             {
                 string match = m.Value.Trim();
-                if (number.IsMatch(match) || match.Length < 3)
+                if (number.IsMatch(match) || match.Length < 4)
                 {
                     continue;
                 }
-                Random rnd = new Random();
-                string first = match.Substring(0, 1);
-                string last = match.Substring(match.Length - 1);
-                string proc = match.Substring(1, match.Length - 2);
-                string output = first;
-                char[] chars = new char[proc.Length];
-                var randomNumbers = Enumerable.Range(0, proc.Length).OrderBy(x => rnd.Next()).Take(proc.Length).ToList();
-                for (int i = 0; i < proc.Length; i++)
+                string output;
+                do
                 {
-                    chars[i] = proc[randomNumbers[i]];
-                }
-                foreach (var c in chars)
-                {
-                    output += c;
-                }
-                output += last;
+                    string first = match.Substring(0, 1);
+                    string last = match.Substring(match.Length - 1);
+                    string proc = match.Substring(1, match.Length - 2);
+                    output = first;
+                    char[] chars = new char[proc.Length];
+                    var randomNumbers = Enumerable.Range(0, proc.Length).OrderBy(x => rnd.Next()).Take(proc.Length).ToList();
+                    for (int i = 0; i < proc.Length; i++)
+                    {
+                        chars[i] = proc[randomNumbers[i]];
+                    }
+                    foreach (var c in chars)
+                    {
+                        output += c;
+                    }
+                    output += last;
+                } while (match == output && rnd.Next(10) < 8);
                 if (!replace.ContainsKey(match)) replace.Add(match, output);
             }
             string newValue = value.Replace("\\n", "\n");
