@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -20,11 +21,13 @@ namespace WuffPadServantBot
         private static Regex number = new Regex(@"\d+");
         private static Random rnd = new Random();
         private const int newValueCount = 3;
+        private const string authenticationFile = "C:\\Olfi01\\WuffPad\\auth.txt";
         static void Main(string[] args)
         {
             Bot = new TelegramBotClient(args[0]);
 
-            Bot.OnMessage += Bot_OnMessage;
+            Bot.OnMessage += ShcreibfelherMaker;
+            Bot.OnCallbackQuery += WuffpadAuthenticator;
 
             Bot.StartReceiving();
 
@@ -37,7 +40,25 @@ namespace WuffPadServantBot
             Bot.StopReceiving();
         }
 
-        private static void Bot_OnMessage(object sender, MessageEventArgs e)
+        private static void WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
+        {
+            if (!e.CallbackQuery.Data.StartsWith("auth:"))
+            {
+                if (e.CallbackQuery.Data != "dontauth") return;
+                Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Denied authorization.");
+                return;
+            }
+            var token = e.CallbackQuery.Data.Substring("auth:".Length);
+            var userId = e.CallbackQuery.From.Id;
+            if (!File.Exists(authenticationFile)) File.WriteAllText(authenticationFile, "{}");
+            Dictionary<int, List<string>> authentication = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(File.ReadAllText(authenticationFile));
+            if (!authentication.ContainsKey(userId)) authentication[userId] = new List<string>();
+            authentication[userId].Add(token);
+            File.WriteAllText(authenticationFile, JsonConvert.SerializeObject(authentication));
+            Bot.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "Successfully verified your user!", showAlert: true);
+        }
+
+        private static void ShcreibfelherMaker(object sender, MessageEventArgs e)
         {
             if (e.Message.Type != MessageType.Document) return;
             if (e.Message.Document.FileName != "Deutsch.xml") return;
