@@ -42,6 +42,7 @@ namespace WuffPadServantBot
 
         private static void WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(authenticationFile));
             if (!e.CallbackQuery.Data.StartsWith("auth:"))
             {
                 if (e.CallbackQuery.Data != "dontauth") return;
