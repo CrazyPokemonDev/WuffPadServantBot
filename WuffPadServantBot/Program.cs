@@ -57,6 +57,7 @@ namespace WuffPadServantBot
             authentication[userId].Add(token);
             File.WriteAllText(authenticationFile, JsonConvert.SerializeObject(authentication));
             Bot.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "Successfully verified your user!", showAlert: true);
+            Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Authorized!");
         }
 
         private static void ShcreibfelherMaker(object sender, MessageEventArgs e)
