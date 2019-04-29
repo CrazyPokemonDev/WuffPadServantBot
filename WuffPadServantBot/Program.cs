@@ -52,12 +52,21 @@ namespace WuffPadServantBot
             var token = e.CallbackQuery.Data.Substring("auth:".Length);
             var userId = e.CallbackQuery.From.Id;
             if (!File.Exists(authenticationFile)) File.WriteAllText(authenticationFile, "{}");
-            Dictionary<int, List<string>> authentication = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(File.ReadAllText(authenticationFile));
-            if (!authentication.ContainsKey(userId)) authentication[userId] = new List<string>();
-            authentication[userId].Add(token);
+            Dictionary<int, (List<string>, UserInfo)> authentication = JsonConvert.DeserializeObject<Dictionary<int, (List<string>, UserInfo)>>(File.ReadAllText(authenticationFile));
+            if (!authentication.ContainsKey(userId)) authentication[userId] = (new List<string>(), new UserInfo());
+            authentication[userId].Item1.Add(token);
+            authentication[userId].Item2.Name = string.Join(" ", e.CallbackQuery.From.FirstName, e.CallbackQuery.From.LastName);
+            authentication[userId].Item2.Username = e.CallbackQuery.From.Username ?? "no username";
             File.WriteAllText(authenticationFile, JsonConvert.SerializeObject(authentication));
             Bot.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "Successfully verified your user!", showAlert: true);
             Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Authorized!");
+        }
+
+        private class UserInfo
+        {
+            public string Name { get; set; }
+            public string Username { get; set; }
+
         }
 
         private static void ShcreibfelherMaker(object sender, MessageEventArgs e)
