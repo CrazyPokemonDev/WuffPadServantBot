@@ -4,12 +4,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Xml.Serialization;
 using Telegram.Bot;
 using Telegram.Bot.Args;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InputFiles;
 using WuffPadServantBot.XMLClasses;
+using File = System.IO.File;
 
 namespace WuffPadServantBot
 {
@@ -17,16 +20,16 @@ namespace WuffPadServantBot
     {
         private const string tempFilePath = "temp.xml";
         private static TelegramBotClient Bot;
-        private static Regex regex = new Regex(@"[^\@]\b(\w)+\b");
-        private static Regex number = new Regex(@"\d+");
-        private static Random rnd = new Random();
+        private static readonly Regex regex = new Regex(@"[^\@]\b(\w)+\b");
+        private static readonly Regex number = new Regex(@"\d+");
+        private static readonly Random rnd = new Random();
         private const int newValueCount = 3;
         private const string authenticationFile = "C:\\Olfi01\\WuffPad\\auth.txt";
         static void Main(string[] args)
         {
             Bot = new TelegramBotClient(args[0]);
 
-            Bot.OnMessage += ShcreibfelherMaker;
+            Bot.OnMessage += OnMessage;
             Bot.OnCallbackQuery += WuffpadAuthenticator;
 
             Bot.StartReceiving();
@@ -40,13 +43,26 @@ namespace WuffPadServantBot
             Bot.StopReceiving();
         }
 
-        private static void WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
+        private static async void OnMessage(object sender, MessageEventArgs e)
+        {
+            if (e.Message.Type != MessageType.Document) return;
+            if (Path.GetExtension(e.Message.Document.FileName).ToLower() != ".xml") return;
+
+            await ValidateLanguageFile(e.Message);
+            // we could theoretically use the returned bool and only create Shcreibfelher if the Deutsch.xml is fine.
+
+            if (e.Message.Document.FileName == "Deutsch.xml")
+                ShcreibfelherMaker(e);
+        }
+
+        #region Authenticator
+        private static async void WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(authenticationFile));
             if (!e.CallbackQuery.Data.StartsWith("auth:"))
             {
                 if (e.CallbackQuery.Data != "dontauth") return;
-                Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Denied authorization.");
+                await Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Denied authorization.");
                 return;
             }
             var token = e.CallbackQuery.Data.Substring("auth:".Length);
@@ -58,8 +74,8 @@ namespace WuffPadServantBot
             authentication[userId].Item2.Name = string.Join(" ", e.CallbackQuery.From.FirstName, e.CallbackQuery.From.LastName);
             authentication[userId].Item2.Username = e.CallbackQuery.From.Username ?? "no username";
             File.WriteAllText(authenticationFile, JsonConvert.SerializeObject(authentication));
-            Bot.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "Successfully verified your user!", showAlert: true);
-            Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Authorized!");
+            await Bot.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "Successfully verified your user!", showAlert: true);
+            await Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Authorized!");
         }
 
         private class UserInfo
@@ -68,18 +84,17 @@ namespace WuffPadServantBot
             public string Username { get; set; }
 
         }
+        #endregion
 
-        private static void ShcreibfelherMaker(object sender, MessageEventArgs e)
+        #region Shcreibfelher
+        private static async void ShcreibfelherMaker(MessageEventArgs e)
         {
-            if (e.Message.Type != MessageType.Document) return;
-            if (e.Message.Document.FileName != "Deutsch.xml") return;
-
-            Console.WriteLine("Received a file!");
+            Console.WriteLine("Received a Deutsch.xml file to randify!");
             Console.WriteLine("Downloading...");
             if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             using (var stream = File.OpenWrite(tempFilePath))
             {
-                Bot.DownloadFileAsync(Bot.GetFileAsync(e.Message.Document.FileId).Result.FilePath, stream).Wait();
+                await Bot.DownloadFileAsync(Bot.GetFileAsync(e.Message.Document.FileId).Result.FilePath, stream);
             }
             Console.WriteLine("Processing...");
             XmlStrings newFile = MakeNewFile();
@@ -97,7 +112,7 @@ namespace WuffPadServantBot
                 {
                     FileName = "Deutsch Shcreibfelher.xml"
                 };
-                Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile, caption: e.Message.Caption == null ? null : Randify(e.Message.Caption)).Wait();
+                await Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile, caption: e.Message.Caption == null ? null : Randify(e.Message.Caption));
             }
 
             Console.WriteLine("Cleaning up...");
@@ -200,5 +215,21 @@ namespace WuffPadServantBot
                 return result.Replace("utf-16", "utf-8");
             }
         }
+        #endregion
+
+        #region Validator
+        private static async Task<bool> ValidateLanguageFile(Message msg)
+        {
+            var m = await Bot.SendTextMessageAsync(msg.Chat.Id, "⏳ Processing file...", replyToMessageId: msg.MessageId);
+            DateTime start = DateTime.UtcNow;
+
+            // Todo: Implement the ACTUAL validation here
+
+            DateTime end = DateTime.UtcNow;
+            var duration = $"{(int)(end - start).TotalSeconds} seconds";
+            await Bot.EditMessageTextAsync(m.Chat.Id, m.MessageId, $"✅ This file is perfect and can be uploaded!\nValidation time: {duration}");
+            return true;
+        }
+        #endregion
     }
 }
