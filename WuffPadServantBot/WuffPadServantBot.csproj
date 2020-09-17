@@ -44,6 +44,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="TgWWModel.cs" />
     <Compile Include="XMLClasses\XmlLanguage.cs" />
     <Compile Include="XMLClasses\XmlString.cs" />
     <Compile Include="XMLClasses\XmlStrings.cs" />

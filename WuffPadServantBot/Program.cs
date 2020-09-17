@@ -1,6 +1,8 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -25,6 +27,10 @@ namespace WuffPadServantBot
         private static readonly Random rnd = new Random();
         private const int newValueCount = 3;
         private const string authenticationFile = "C:\\Olfi01\\WuffPad\\auth.txt";
+        private const string validationPath = "C:\\Olfi01\\WWValidation\\Files\\";
+        private const string modelFile = "C:\\Olfi01\\WWValidation\\Files\\English.xml";
+        private const string tgwwlangFile = "C:\\Olfi01\\WWValidation\\TgWWLang\\tgwwlang.py";
+
         static void Main(string[] args)
         {
             Bot = new TelegramBotClient(args[0]);
@@ -47,6 +53,12 @@ namespace WuffPadServantBot
         {
             if (e.Message.Type != MessageType.Document) return;
             if (Path.GetExtension(e.Message.Document.FileName).ToLower() != ".xml") return;
+
+            if (e.Message.Document.FileName.ToLower() == "english.xml")
+            {
+                await Bot.SendTextMessageAsync(e.Message.Chat.Id, "ℹ️ English.xml detected, skipping validation.", replyToMessageId: e.Message.MessageId);
+                return;
+            }
 
             await ValidateLanguageFile(e.Message);
             // we could theoretically use the returned bool and only create Shcreibfelher if the Deutsch.xml is fine.
@@ -220,14 +232,110 @@ namespace WuffPadServantBot
         #region Validator
         private static async Task<bool> ValidateLanguageFile(Message msg)
         {
-            var m = await Bot.SendTextMessageAsync(msg.Chat.Id, "⏳ Processing file...", replyToMessageId: msg.MessageId);
-            DateTime start = DateTime.UtcNow;
+            var filepath = Path.Combine(validationPath, msg.Document.FileName);
+            using (var stream = File.OpenWrite(filepath))
+            {
+                await Bot.GetInfoAndDownloadFileAsync(msg.Document.FileId, stream);
+            }
 
-            // Todo: Implement the ACTUAL validation here
+            var psi = new ProcessStartInfo()
+            {
+                FileName = "py.exe",
+                Arguments = $"{tgwwlangFile} check {filepath} --json --model {modelFile}",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true
+            };
 
-            DateTime end = DateTime.UtcNow;
-            var duration = $"{(int)(end - start).TotalSeconds} seconds";
-            await Bot.EditMessageTextAsync(m.Chat.Id, m.MessageId, $"✅ This file is perfect and can be uploaded!\nValidation time: {duration}");
+            string stdout;
+            using (var p = Process.Start(psi))
+            {
+                stdout = p.StandardOutput.ReadToEnd();
+                p.WaitForExit();
+            }
+
+            File.Delete(filepath);
+
+            var result = JsonConvert.DeserializeObject<TgWWResult>(stdout);
+
+            int missingStrings = 0, unknownStrings = 0, placeholderErrors = 0, duplicatedStrings = 0;
+            List<string> criticalErrors = new List<string>();
+
+            var a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.TargetFile);
+            if (a != null)
+            {
+                foreach (var mess in a.Messages)
+                {
+                    if (!Enum.IsDefined(typeof(TgWWMessageCode), mess[0])) continue; // unknown error code... ignore
+
+                    var messageCode = (TgWWMessageCode)mess[0];
+                    var lineNumber = (long)mess[1]; // this needs to be long... I don't ask why
+                    var details = ((JArray)mess[2]).ToObject<object[]>();
+
+                    switch (messageCode)
+                    {
+                        case TgWWMessageCode.MissingString:
+                            missingStrings++;
+                            break;
+
+                        case TgWWMessageCode.UnknownString:
+                            unknownStrings++;
+                            break;
+
+                        case TgWWMessageCode.ExtraPlaceholder:
+                        case TgWWMessageCode.MissingPlaceholder:
+                        case TgWWMessageCode.InconsistentPlaceholders:
+                            placeholderErrors++;
+                            break;
+
+                        case TgWWMessageCode.LanguageTagFieldEmpty:
+                            criticalErrors.Add("L" + lineNumber + ": " + string.Format("<language {0}=\"\" /> must not be empty!", details));
+                            break;
+
+                        case TgWWMessageCode.DuplicatedString:
+                            duplicatedStrings++;
+                            break;
+
+                        case TgWWMessageCode.ValueEmpty:
+                            criticalErrors.Add("L" + lineNumber + ": " + string.Format("The <string key=\"{0}\"> contains empty values!", details));
+                            break;
+
+                        case TgWWMessageCode.ValuesMissing:
+                            criticalErrors.Add("L" + lineNumber + ": " + string.Format("The <string key=\"{0}\"> doesn't contain any values!", details));
+                            break;
+                    }
+                }
+
+                foreach (var err in a.Errors)
+                {
+                    var lineNumber = (long)err[0];
+                    var desc = (string)err[1];
+
+                    criticalErrors.Add("L" + lineNumber + ": " + desc);
+                }
+            }
+
+            string response;
+            if (criticalErrors.Any())
+            {
+                response = "❌ DON'T UPLOAD! This file has CRITICAL errors:\n" + string.Join("\n", criticalErrors);
+            }
+            else if (missingStrings != 0 || unknownStrings != 0 || placeholderErrors != 0 || duplicatedStrings != 0)
+            {
+                response = "⚠️ This file CAN be uploaded, but it has flaws:\n";
+                if (missingStrings != 0) response += $"{missingStrings} missing string{(missingStrings == 1 ? "" : "s")}\n";
+                if (unknownStrings != 0) response += $"{unknownStrings} unknown string{(unknownStrings == 1 ? "" : "s")}\n";
+                if (placeholderErrors != 0) response += $"{placeholderErrors} error{(placeholderErrors == 1 ? "" : "s")} regarding {{#}}\n";
+                if (duplicatedStrings != 0) response += $"{duplicatedStrings} duplicated string{(duplicatedStrings == 1 ? "" : "s")}\n";
+
+                response += "\nIt's up to the admins to decide whether the file should be uploaded like this!";
+            }
+            else
+            {
+                response = "✅ This file is perfect and can be uploaded!";
+            }
+
+            await Bot.SendTextMessageAsync(msg.Chat.Id, response, replyToMessageId: msg.MessageId);
             return true;
         }
         #endregion
