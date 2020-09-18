@@ -421,6 +421,7 @@ namespace WuffPadServantBot
                             case TgWWMessageCode.ModelNotDefault:
                             case TgWWMessageCode.ValueEmpty:
                             case TgWWMessageCode.ValuesMissing:
+                            case TgWWMessageCode.TextOutsideValue:
                                 codes.Add((long)messageCode);
                                 break;
                         }
