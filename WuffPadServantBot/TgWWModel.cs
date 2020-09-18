@@ -13,6 +13,7 @@ namespace WuffPadServantBot
         public List<TgWWAnnotation> Annotations { get; set; }
     }
 
+    [JsonObject]
     public class TgWWAnnotation
     {
         [JsonProperty(PropertyName = "file")]
@@ -113,6 +114,12 @@ namespace WuffPadServantBot
         /// <summary>
         /// A string with key `details[0]` has attribute `details[1]` set to `true`, however, in model langfile, it is set to `false`.
         /// </summary>
-        AttributeWronglyTrue = 20
+        AttributeWronglyTrue = 20,
+
+        /// <summary>
+        /// There is text found outside of value tags - this is likely a mistake by the editor.
+        /// (Either it should have been inside a value or it should have been an XML-comment)
+        /// </summary>
+        TextOutsideValue = 21,
     }
 }

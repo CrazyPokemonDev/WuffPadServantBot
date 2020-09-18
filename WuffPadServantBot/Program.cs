@@ -35,8 +35,8 @@ namespace WuffPadServantBot
         {
             Bot = new TelegramBotClient(args[0]);
 
-            Bot.OnMessage += OnMessage;
-            Bot.OnCallbackQuery += WuffpadAuthenticator;
+            Bot.OnMessage += async (sender, e) => await OnMessage(sender, e);
+            Bot.OnCallbackQuery += async (sender, e) => await WuffpadAuthenticator(sender, e);
 
             Bot.StartReceiving();
 
@@ -49,7 +49,7 @@ namespace WuffPadServantBot
             Bot.StopReceiving();
         }
 
-        private static async void OnMessage(object sender, MessageEventArgs e)
+        private static async Task OnMessage(object sender, MessageEventArgs e)
         {
             if (e.Message.Type != MessageType.Document) return;
             if (Path.GetExtension(e.Message.Document.FileName).ToLower() != ".xml") return;
@@ -64,11 +64,11 @@ namespace WuffPadServantBot
             // we could theoretically use the returned bool and only create Shcreibfelher if the Deutsch.xml is fine.
 
             if (e.Message.Document.FileName == "Deutsch.xml")
-                ShcreibfelherMaker(e);
+                await ShcreibfelherMaker(e);
         }
 
         #region Authenticator
-        private static async void WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
+        private static async Task WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(authenticationFile));
             if (!e.CallbackQuery.Data.StartsWith("auth:"))
@@ -99,7 +99,7 @@ namespace WuffPadServantBot
         #endregion
 
         #region Shcreibfelher
-        private static async void ShcreibfelherMaker(MessageEventArgs e)
+        private static async Task ShcreibfelherMaker(MessageEventArgs e)
         {
             Console.WriteLine("Received a Deutsch.xml file to randify!");
             Console.WriteLine("Downloading...");
@@ -258,85 +258,172 @@ namespace WuffPadServantBot
 
             var result = JsonConvert.DeserializeObject<TgWWResult>(stdout);
 
-            int missingStrings = 0, unknownStrings = 0, placeholderErrors = 0, duplicatedStrings = 0;
+            HashSet<string> unknownStrings = new HashSet<string>();
+            HashSet<string> duplicatedStrings = new HashSet<string>();
+            HashSet<string> missingStrings = new HashSet<string>();
+            HashSet<string> placeholderErrors = new HashSet<string>();
+            HashSet<long> textOutsideValues = new HashSet<long>();
             List<string> criticalErrors = new List<string>();
 
             var a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.TargetFile);
             if (a != null)
             {
-                foreach (var mess in a.Messages)
-                {
-                    if (!Enum.IsDefined(typeof(TgWWMessageCode), mess[0])) continue; // unknown error code... ignore
-
-                    var messageCode = (TgWWMessageCode)mess[0];
-                    var lineNumber = (long)mess[1]; // this needs to be long... I don't ask why
-                    var details = ((JArray)mess[2]).ToObject<object[]>();
-
-                    switch (messageCode)
-                    {
-                        case TgWWMessageCode.MissingString:
-                            missingStrings++;
-                            break;
-
-                        case TgWWMessageCode.UnknownString:
-                            unknownStrings++;
-                            break;
-
-                        case TgWWMessageCode.ExtraPlaceholder:
-                        case TgWWMessageCode.MissingPlaceholder:
-                        case TgWWMessageCode.InconsistentPlaceholders:
-                            placeholderErrors++;
-                            break;
-
-                        case TgWWMessageCode.LanguageTagFieldEmpty:
-                            criticalErrors.Add("L" + lineNumber + ": " + string.Format("<language {0}=\"\" /> must not be empty!", details));
-                            break;
-
-                        case TgWWMessageCode.DuplicatedString:
-                            duplicatedStrings++;
-                            break;
-
-                        case TgWWMessageCode.ValueEmpty:
-                            criticalErrors.Add("L" + lineNumber + ": " + string.Format("The <string key=\"{0}\"> contains empty values!", details));
-                            break;
-
-                        case TgWWMessageCode.ValuesMissing:
-                            criticalErrors.Add("L" + lineNumber + ": " + string.Format("The <string key=\"{0}\"> doesn't contain any values!", details));
-                            break;
-                    }
-                }
-
                 foreach (var err in a.Errors)
                 {
                     var lineNumber = (long)err[0];
                     var desc = (string)err[1];
 
-                    criticalErrors.Add("L" + lineNumber + ": " + desc);
+                    var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
+
+                    criticalErrors.Add(line + desc);
+                }
+
+                if (!criticalErrors.Any())
+                {
+                    foreach (var mess in a.Messages)
+                    {
+                        if (!Enum.IsDefined(typeof(TgWWMessageCode), mess[0])) continue; // unknown error code... ignore
+
+                        var messageCode = (TgWWMessageCode)mess[0];
+                        var lineNumber = (long)mess[1]; // this needs to be long... I don't ask why
+                        var details = ((JArray)mess[2]).ToObject<object[]>();
+
+                        var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
+
+                        switch (messageCode)
+                        {
+                            case TgWWMessageCode.MissingString:
+                                missingStrings.Add((string)details.ElementAt(0));
+                                break;
+
+                            case TgWWMessageCode.UnknownString:
+                                unknownStrings.Add((string)details.ElementAt(0));
+                                break;
+
+                            case TgWWMessageCode.ExtraPlaceholder:
+                            case TgWWMessageCode.MissingPlaceholder:
+                                placeholderErrors.Add((string)details.ElementAt(0));
+                                break;
+
+                            case TgWWMessageCode.LanguageTagFieldEmpty:
+                                criticalErrors.Add(line + string.Format("<language {0}=\"\" /> must not be empty!", details));
+                                break;
+
+                            case TgWWMessageCode.DuplicatedString:
+                                duplicatedStrings.Add((string)details.ElementAt(0));
+                                break;
+
+                            case TgWWMessageCode.ValueEmpty:
+                                criticalErrors.Add(line + string.Format("The <string key=\"{0}\"> contains empty values!", details));
+                                break;
+
+                            case TgWWMessageCode.ValuesMissing:
+                                criticalErrors.Add(line + string.Format("The <string key=\"{0}\"> doesn't contain any values!", details));
+                                break;
+
+                            case TgWWMessageCode.LangFileBaseVariantDuplication:
+                                criticalErrors.Add(line + string.Format("The <language base=\"{0}\" variant=\"{1}\" /> is not changed from English.xml!", details));
+                                break;
+
+                            case TgWWMessageCode.LangFileNameDuplication:
+                                criticalErrors.Add(line + string.Format("The <language name=\"{0}\"> is not changed from English.xml!", details));
+                                break;
+
+                            case TgWWMessageCode.TextOutsideValue:
+                                textOutsideValues.Add(lineNumber);
+                                break;
+                        }
+                    }
                 }
             }
 
             string response;
+            bool success;
             if (criticalErrors.Any())
             {
-                response = "❌ DON'T UPLOAD! This file has CRITICAL errors:\n" + string.Join("\n", criticalErrors);
+                success = false;
+                response = "❌ DON'T UPLOAD! This file has CRITICAL errors:\n" + string.Join("\n", criticalErrors.Take(5));
+                if (criticalErrors.Count > 5) response += $"\nAnd {criticalErrors.Count - 5} more critical error(s)";
             }
-            else if (missingStrings != 0 || unknownStrings != 0 || placeholderErrors != 0 || duplicatedStrings != 0)
+            else if (missingStrings.Any() || unknownStrings.Any() || placeholderErrors.Any() || duplicatedStrings.Any() || textOutsideValues.Any())
             {
+                success = true;
                 response = "⚠️ This file CAN be uploaded, but it has flaws:\n";
-                if (missingStrings != 0) response += $"{missingStrings} missing string{(missingStrings == 1 ? "" : "s")}\n";
-                if (unknownStrings != 0) response += $"{unknownStrings} unknown string{(unknownStrings == 1 ? "" : "s")}\n";
-                if (placeholderErrors != 0) response += $"{placeholderErrors} error{(placeholderErrors == 1 ? "" : "s")} regarding {{#}}\n";
-                if (duplicatedStrings != 0) response += $"{duplicatedStrings} duplicated string{(duplicatedStrings == 1 ? "" : "s")}\n";
+
+                if (missingStrings.Any())
+                {
+                    response += $"{missingStrings.Count} missing string{(missingStrings.Count == 1 ? "" : "s")}: {string.Join(", ", missingStrings.Take(5))}" +
+                        $"{(missingStrings.Count > 5 ? $" (and {missingStrings.Count - 5} more)" : "")}\n";
+                }
+                if (unknownStrings.Any())
+                {
+                    response += $"{unknownStrings.Count} unknown string{(unknownStrings.Count == 1 ? "" : "s")}: {string.Join(", ", unknownStrings.Take(5))}" +
+                        $"{(unknownStrings.Count > 5 ? $" (and {unknownStrings.Count - 5} more)" : "")}\n";
+                }
+                if (placeholderErrors.Any())
+                {
+                    response += $"{placeholderErrors.Count} error{(placeholderErrors.Count == 1 ? "" : "s")} regarding {{#}}: " +
+                        $"{string.Join(", ", placeholderErrors.Take(5))}" +
+                        $"{(placeholderErrors.Count > 5 ? $" (and {placeholderErrors.Count - 5} more)" : "")}\n";
+                }
+                if (duplicatedStrings.Any())
+                {
+                    response += $"{duplicatedStrings.Count} duplicated string{(duplicatedStrings.Count == 1 ? "" : "s")}: {string.Join(", ", duplicatedStrings.Take(5))}" +
+                        $"{(duplicatedStrings.Count > 5 ? $" (and {duplicatedStrings.Count - 5} more)" : "")}\n";
+                }
+                if (textOutsideValues.Any())
+                {
+                    response += $"There is text outside of <value> tags in {textOutsideValues.Count} lines: " +
+                        $"{string.Join(", ", textOutsideValues.Take(5).Select(x => $"L{x}"))}" +
+                        $"{(textOutsideValues.Count > 5 ? $" (and {textOutsideValues.Count - 5} more)" : "")}\n" +
+                        $"If that text was meant to be a comment, it should be an XML comment like this: <!-- COMMENT HERE -->\n";
+                }
 
                 response += "\nIt's up to the admins to decide whether the file should be uploaded like this!";
             }
             else
             {
+                success = true;
                 response = "✅ This file is perfect and can be uploaded!";
             }
 
+            a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.ModelFile);
+            if (a != null)
+            {
+                if (a.Errors.Any()) response += "\n\nWarning: critical errors are present in the model file on the server!";
+                else if (a.Messages.Any())
+                {
+                    HashSet<long> codes = new HashSet<long>();
+                    foreach (var mess in a.Messages)
+                    {
+                        if (!Enum.IsDefined(typeof(TgWWMessageCode), mess[0]))
+                        {
+                            codes.Add((long)mess[0]);
+                            continue;
+                        }
+
+                        var messageCode = (TgWWMessageCode)mess[0];
+                        switch (messageCode)
+                        {
+                            case TgWWMessageCode.DuplicatedString:
+                            case TgWWMessageCode.InconsistentPlaceholders:
+                            case TgWWMessageCode.LanguageTagFieldEmpty:
+                            case TgWWMessageCode.ModelNotDefault:
+                            case TgWWMessageCode.ValueEmpty:
+                            case TgWWMessageCode.ValuesMissing:
+                                codes.Add((long)messageCode);
+                                break;
+                        }
+                    }
+                    if (codes.Any())
+                    {
+                        response += "\n\nWarning: (non-critical) error(s) present in the model file on the server: " + string.Join(", ", codes);
+                    }
+                }
+            }
+
             await Bot.SendTextMessageAsync(msg.Chat.Id, response, replyToMessageId: msg.MessageId);
-            return true;
+            return success;
         }
         #endregion
     }
