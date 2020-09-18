@@ -241,7 +241,7 @@ namespace WuffPadServantBot
             var psi = new ProcessStartInfo()
             {
                 FileName = "py.exe",
-                Arguments = $"{tgwwlangFile} check {filepath} --json --model {modelFile}",
+                Arguments = $"\"{tgwwlangFile}\" check --json --model \"{modelFile}\" -- \"{filepath}\"",
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true
@@ -258,11 +258,11 @@ namespace WuffPadServantBot
 
             var result = JsonConvert.DeserializeObject<TgWWResult>(stdout);
 
-            HashSet<string> unknownStrings = new HashSet<string>();
-            HashSet<string> duplicatedStrings = new HashSet<string>();
-            HashSet<string> missingStrings = new HashSet<string>();
-            HashSet<string> placeholderErrors = new HashSet<string>();
-            HashSet<long> textOutsideValues = new HashSet<long>();
+            List<string> unknownStrings = new List<string>();
+            List<string> duplicatedStrings = new List<string>();
+            List<string> missingStrings = new List<string>();
+            List<string> placeholderErrors = new List<string>();
+            List<long> textOutsideValues = new List<long>();
             List<string> criticalErrors = new List<string>();
 
             var a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.TargetFile);
@@ -347,6 +347,12 @@ namespace WuffPadServantBot
             }
             else if (missingStrings.Any() || unknownStrings.Any() || placeholderErrors.Any() || duplicatedStrings.Any() || textOutsideValues.Any())
             {
+                missingStrings = missingStrings.Distinct().ToList();
+                unknownStrings = unknownStrings.Distinct().ToList();
+                placeholderErrors = placeholderErrors.Distinct().ToList();
+                duplicatedStrings = duplicatedStrings.Distinct().ToList();
+                textOutsideValues = textOutsideValues.Distinct().ToList();
+
                 success = true;
                 response = "⚠️ This file CAN be uploaded, but it has flaws:\n";
 
