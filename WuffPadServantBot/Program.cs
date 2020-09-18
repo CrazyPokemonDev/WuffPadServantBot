@@ -332,6 +332,10 @@ namespace WuffPadServantBot
                             case TgWWMessageCode.TextOutsideValue:
                                 textOutsideValues.Add(lineNumber);
                                 break;
+
+                            case TgWWMessageCode.AttributeWronglyTrue:
+                                criticalErrors.Add(line + string.Format("The <string key=\"{0}\"> has the {1} attribute set to true, but it should be false!", details));
+                                break;
                         }
                     }
                 }
