@@ -28,7 +28,6 @@ namespace WuffPadServantBot
         private const int newValueCount = 3;
         private const string authenticationFile = "C:\\Olfi01\\WuffPad\\auth.txt";
         private const string validationPath = "C:\\Olfi01\\WWValidation\\Files\\";
-        private const string modelFile = "C:\\Olfi01\\WWValidation\\Files\\English.xml";
         private const string tgwwlangFile = "C:\\Olfi01\\WWValidation\\TgWWLang\\tgwwlang.py";
 
         static void Main(string[] args)
@@ -60,8 +59,9 @@ namespace WuffPadServantBot
                 return;
             }
 
-            await ValidateLanguageFile(e.Message);
-            // we could theoretically use the returned bool and only create Shcreibfelher if the Deutsch.xml is fine.
+            var res = await ValidateLanguageFile(e.Message);
+            if (!res) // the file has critical errors, do not create Shcreibfelher (if the file is Deutsch.xml)
+                return;
 
             if (e.Message.Document.FileName == "Deutsch.xml")
                 await ShcreibfelherMaker(e);
@@ -232,6 +232,8 @@ namespace WuffPadServantBot
         #region Validator
         private static async Task<bool> ValidateLanguageFile(Message msg)
         {
+            var pm = msg.Chat.Type == ChatType.Private;
+
             var filepath = Path.Combine(validationPath, msg.Document.FileName);
             using (var stream = File.OpenWrite(filepath))
             {
@@ -241,10 +243,11 @@ namespace WuffPadServantBot
             var psi = new ProcessStartInfo()
             {
                 FileName = "py.exe",
-                Arguments = $"\"{tgwwlangFile}\" check --json --model \"{modelFile}\" -- \"{filepath}\"",
+                Arguments = $"\"{tgwwlangFile}\" check --json --model \"English.xml\" -- \"{msg.Document.FileName}\"",
                 CreateNoWindow = true,
                 UseShellExecute = false,
-                RedirectStandardOutput = true
+                RedirectStandardOutput = true,
+                WorkingDirectory = validationPath
             };
 
             string stdout;
@@ -258,11 +261,7 @@ namespace WuffPadServantBot
 
             var result = JsonConvert.DeserializeObject<TgWWResult>(stdout);
 
-            List<string> unknownStrings = new List<string>();
-            List<string> duplicatedStrings = new List<string>();
-            List<string> missingStrings = new List<string>();
-            List<string> placeholderErrors = new List<string>();
-            List<long> textOutsideValues = new List<long>();
+            List<string> warnings = new List<string>();
             List<string> criticalErrors = new List<string>();
 
             var a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.TargetFile);
@@ -275,7 +274,9 @@ namespace WuffPadServantBot
 
                     var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
 
-                    criticalErrors.Add(line + desc);
+                    var error = line + desc;
+                    if (!criticalErrors.Contains(error))
+                        criticalErrors.Add(error);
                 }
 
                 if (!criticalErrors.Any())
@@ -292,108 +293,108 @@ namespace WuffPadServantBot
 
                         switch (messageCode)
                         {
-                            case TgWWMessageCode.MissingString:
-                                missingStrings.Add((string)details.ElementAt(0));
-                                break;
-
-                            case TgWWMessageCode.UnknownString:
-                                unknownStrings.Add((string)details.ElementAt(0));
-                                break;
-
-                            case TgWWMessageCode.ExtraPlaceholder:
-                            case TgWWMessageCode.MissingPlaceholder:
-                                placeholderErrors.Add((string)details.ElementAt(0));
-                                break;
-
+                            #region Critical errors
                             case TgWWMessageCode.LanguageTagFieldEmpty:
-                                criticalErrors.Add(line + string.Format("<language {0}=\"\" /> must not be empty!", details));
-                                break;
-
-                            case TgWWMessageCode.DuplicatedString:
-                                duplicatedStrings.Add((string)details.ElementAt(0));
+                                var message = $"{line}Empty {details.ElementAt(0)} attribute in language tag";
+                                if (!criticalErrors.Contains(message))
+                                    criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.ValueEmpty:
-                                criticalErrors.Add(line + string.Format("The <string key=\"{0}\"> contains empty values!", details));
+                                message = $"{line}Empty values in {details.ElementAt(0)}";
+                                if (!criticalErrors.Contains(message))
+                                    criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.ValuesMissing:
-                                criticalErrors.Add(line + string.Format("The <string key=\"{0}\"> doesn't contain any values!", details));
+                                message = $"{line}No values in {details.ElementAt(0)}";
+                                if (!criticalErrors.Contains(message))
+                                    criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.LangFileBaseVariantDuplication:
-                                criticalErrors.Add(line + string.Format("The <language base=\"{0}\" variant=\"{1}\" /> is not changed from English.xml!", details));
+                                message = $"{line}Base/Variant matches English.xml! ({details.ElementAt(0)} {details.ElementAt(1)})";
+                                if (!criticalErrors.Contains(message))
+                                    criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.LangFileNameDuplication:
-                                criticalErrors.Add(line + string.Format("The <language name=\"{0}\"> is not changed from English.xml!", details));
-                                break;
-
-                            case TgWWMessageCode.TextOutsideValue:
-                                textOutsideValues.Add(lineNumber);
+                                message = $"{line}Name matches English.xml! ({details.ElementAt(0)})";
+                                if (!criticalErrors.Contains(message))
+                                    criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.AttributeWronglyTrue:
-                                criticalErrors.Add(line + string.Format("The <string key=\"{0}\"> has the {1} attribute set to true, but it should be false!", details));
+                                message = $"{line}Attribute {details.ElementAt(1)} is true in {details.ElementAt(0)} but should be false";
+                                if (!criticalErrors.Contains(message))
+                                    criticalErrors.Add(message);
                                 break;
+                            #endregion
+
+                            #region Warnings
+                            case TgWWMessageCode.MissingString:
+                                message = $"{line}Missing string: {details.ElementAt(0)}";
+                                if (!warnings.Contains(message))
+                                    warnings.Add(message);
+                                break;
+
+                            case TgWWMessageCode.UnknownString:
+                                message = $"{line} Unknown string: {details.ElementAt(0)}";
+                                if (!warnings.Contains(message))
+                                    warnings.Add(message);
+                                break;
+
+                            case TgWWMessageCode.ExtraPlaceholder:
+                                message = $"{line}Extra {details.ElementAt(1)} in {details.ElementAt(0)}";
+                                if (!warnings.Contains(message))
+                                    warnings.Add(message);
+                                break;
+
+                            case TgWWMessageCode.MissingPlaceholder:
+                                message = $"{line}Missing {details.ElementAt(1)} in {details.ElementAt(0)}";
+                                if (!warnings.Contains(message))
+                                    warnings.Add(message);
+                                break;
+
+                            case TgWWMessageCode.DuplicatedString:
+                                message = $"{line}Multiple definitions of {details.ElementAt(0)}";
+                                if (!warnings.Contains(message))
+                                    warnings.Add(message);
+                                break;
+
+                            case TgWWMessageCode.TextOutsideValue:
+                                message = $"{line}Text outside of value tags";
+                                if (!warnings.Contains(message))
+                                    warnings.Add(message);
+                                break;
+                                #endregion
                         }
                     }
                 }
             }
 
             string response;
-            bool success;
+            ValidationResult success;
             if (criticalErrors.Any())
             {
-                success = false;
-                response = "❌ DON'T UPLOAD! This file has CRITICAL errors:\n" + string.Join("\n", criticalErrors.Take(5));
-                if (criticalErrors.Count > 5) response += $"\nAnd {criticalErrors.Count - 5} more critical error(s)";
+                success = ValidationResult.HasErrors;
+
+                response = string.Join("\n", pm ? criticalErrors : criticalErrors.Take(5)); // in the group, only show up to 5 errors
+                if (criticalErrors.Count > 5 && !pm) response += $"\nAnd {criticalErrors.Count - 5} more critical error(s).";
+                if (!pm) response += $"\n\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
             }
-            else if (missingStrings.Any() || unknownStrings.Any() || placeholderErrors.Any() || duplicatedStrings.Any() || textOutsideValues.Any())
+            else if (warnings.Any())
             {
-                missingStrings = missingStrings.Distinct().ToList();
-                unknownStrings = unknownStrings.Distinct().ToList();
-                placeholderErrors = placeholderErrors.Distinct().ToList();
-                duplicatedStrings = duplicatedStrings.Distinct().ToList();
-                textOutsideValues = textOutsideValues.Distinct().ToList();
+                success = ValidationResult.HasWarnings;
 
-                success = true;
-                response = "⚠️ This file CAN be uploaded, but it has flaws:\n";
-
-                if (missingStrings.Any())
-                {
-                    response += $"{missingStrings.Count} missing string{(missingStrings.Count == 1 ? "" : "s")}: {string.Join(", ", missingStrings.Take(5))}" +
-                        $"{(missingStrings.Count > 5 ? $" (and {missingStrings.Count - 5} more)" : "")}\n";
-                }
-                if (unknownStrings.Any())
-                {
-                    response += $"{unknownStrings.Count} unknown string{(unknownStrings.Count == 1 ? "" : "s")}: {string.Join(", ", unknownStrings.Take(5))}" +
-                        $"{(unknownStrings.Count > 5 ? $" (and {unknownStrings.Count - 5} more)" : "")}\n";
-                }
-                if (placeholderErrors.Any())
-                {
-                    response += $"{placeholderErrors.Count} error{(placeholderErrors.Count == 1 ? "" : "s")} regarding {{#}}: " +
-                        $"{string.Join(", ", placeholderErrors.Take(5))}" +
-                        $"{(placeholderErrors.Count > 5 ? $" (and {placeholderErrors.Count - 5} more)" : "")}\n";
-                }
-                if (duplicatedStrings.Any())
-                {
-                    response += $"{duplicatedStrings.Count} duplicated string{(duplicatedStrings.Count == 1 ? "" : "s")}: {string.Join(", ", duplicatedStrings.Take(5))}" +
-                        $"{(duplicatedStrings.Count > 5 ? $" (and {duplicatedStrings.Count - 5} more)" : "")}\n";
-                }
-                if (textOutsideValues.Any())
-                {
-                    response += $"There is text outside of <value> tags in {textOutsideValues.Count} lines: " +
-                        $"{string.Join(", ", textOutsideValues.Take(5).Select(x => $"L{x}"))}" +
-                        $"{(textOutsideValues.Count > 5 ? $" (and {textOutsideValues.Count - 5} more)" : "")}\n" +
-                        $"If that text was meant to be a comment, it should be an XML comment like this: <!-- COMMENT HERE -->\n";
-                }
-
-                response += "\nIt's up to the admins to decide whether the file should be uploaded like this!";
+                response = string.Join("\n", pm ? warnings : warnings.Take(5)); // in the group, only show up to 5 warnings
+                if (warnings.Count > 5 && !pm) response += $"\nAnd {warnings.Count - 5} more warning(s)." +
+                        $"\n\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.";
+                response += "\n\nIt's up to the admins to decide whether the file should be uploaded like this!";
             }
             else
             {
-                success = true;
+                success = ValidationResult.Perfect;
                 response = "✅ This file is perfect and can be uploaded!";
             }
 
@@ -433,8 +434,62 @@ namespace WuffPadServantBot
                 }
             }
 
-            await Bot.SendTextMessageAsync(msg.Chat.Id, response, replyToMessageId: msg.MessageId);
-            return success;
+            // ❌ DON'T UPLOAD! This file has CRITICAL errors:
+            // ⚠️ This file CAN be uploaded, but it has flaws:
+            // It's up to the admins to decide whether the file should be uploaded like this!
+
+            switch (success)
+            {
+                case ValidationResult.HasErrors:
+                    if (pm)
+                    {
+                        if (criticalErrors.Count > 5)
+                        {
+                            var path = Path.Combine(validationPath, "errors.txt");
+                            File.WriteAllText(path, response);
+                            using (var stream = File.OpenRead(path))
+                                await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "errors.txt"), "❌ This file has CRITICAL errors!", replyToMessageId: msg.MessageId);
+                            File.Delete(path);
+                        }
+                        else await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
+
+                    }
+                    else
+                        await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ DON'T UPLOAD! This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
+                    return false;
+
+                case ValidationResult.HasWarnings:
+                    if (pm)
+                    {
+                        if (warnings.Count > 5)
+                        {
+                            var path = Path.Combine(validationPath, "warnings.txt");
+                            File.WriteAllText(path, response);
+                            using (var stream = File.OpenRead(path))
+                                await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "warnings.txt"), "⚠️ This file CAN be uploaded, but it has flaws you should fix first!", replyToMessageId: msg.MessageId);
+                            File.Delete(path);
+                        }
+                        else await Bot.SendTextMessageAsync(msg.Chat.Id, $"⚠️ This file CAN be uploaded, but it has flaws you should fix first:\n\n{response}", replyToMessageId: msg.MessageId);
+                    }
+                    else
+                    {
+                        await Bot.SendTextMessageAsync(msg.Chat.Id, $"⚠️ This file CAN be uploaded, but it has flaws:\n\n{response}", replyToMessageId: msg.MessageId);
+                    }
+                    return true;
+
+                case ValidationResult.Perfect:
+                    await Bot.SendTextMessageAsync(msg.Chat.Id, response, replyToMessageId: msg.MessageId);
+                    return true;
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(success), success, "Neither of the 3 validation results applied.");
+        }
+
+        enum ValidationResult
+        {
+            Perfect,
+            HasWarnings,
+            HasErrors
         }
         #endregion
     }
