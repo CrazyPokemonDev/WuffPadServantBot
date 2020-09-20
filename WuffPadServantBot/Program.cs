@@ -339,7 +339,7 @@ namespace WuffPadServantBot
                                 break;
 
                             case TgWWMessageCode.UnknownString:
-                                message = $"{line} Unknown string: {details.ElementAt(0)}";
+                                message = $"{line}Unknown string: {details.ElementAt(0)}";
                                 if (!warnings.Contains(message))
                                     warnings.Add(message);
                                 break;
