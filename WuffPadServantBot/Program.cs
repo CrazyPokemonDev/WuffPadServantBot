@@ -363,7 +363,7 @@ namespace WuffPadServantBot
                                 break;
 
                             case TgWWMessageCode.TextOutsideValue:
-                                message = $"{line}Text outside of value tags";
+                                message = $"{line}Text outside of value tags\n  If this is a comment, it should be like this: <!-- COMMENT HERE -->";
                                 if (!warnings.Contains(message))
                                     warnings.Add(message);
                                 break;
