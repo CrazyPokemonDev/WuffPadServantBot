@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
@@ -275,8 +276,7 @@ namespace WuffPadServantBot
                     var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
 
                     var error = line + desc;
-                    if (!criticalErrors.Contains(error))
-                        criticalErrors.Add(error);
+                    criticalErrors.Add(error);
                 }
 
                 if (!criticalErrors.Any())
@@ -296,76 +296,64 @@ namespace WuffPadServantBot
                             #region Critical errors
                             case TgWWMessageCode.LanguageTagFieldEmpty:
                                 var message = $"{line}Empty {details.ElementAt(0)} attribute in language tag";
-                                if (!criticalErrors.Contains(message))
-                                    criticalErrors.Add(message);
+                                criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.ValueEmpty:
                                 message = $"{line}Empty values in {details.ElementAt(0)}";
-                                if (!criticalErrors.Contains(message))
-                                    criticalErrors.Add(message);
+                                criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.ValuesMissing:
                                 message = $"{line}No values in {details.ElementAt(0)}";
-                                if (!criticalErrors.Contains(message))
-                                    criticalErrors.Add(message);
+                                criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.LangFileBaseVariantDuplication:
                                 message = $"{line}Base/Variant matches English.xml! ({details.ElementAt(0)} {details.ElementAt(1)})";
-                                if (!criticalErrors.Contains(message))
-                                    criticalErrors.Add(message);
+                                criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.LangFileNameDuplication:
                                 message = $"{line}Name matches English.xml! ({details.ElementAt(0)})";
-                                if (!criticalErrors.Contains(message))
-                                    criticalErrors.Add(message);
+                                criticalErrors.Add(message);
                                 break;
 
                             case TgWWMessageCode.AttributeWronglyTrue:
                                 message = $"{line}Attribute {details.ElementAt(1)} is true in {details.ElementAt(0)} but should be false";
-                                if (!criticalErrors.Contains(message))
-                                    criticalErrors.Add(message);
+                                criticalErrors.Add(message);
                                 break;
                             #endregion
 
                             #region Warnings
                             case TgWWMessageCode.MissingString:
                                 message = $"{line}Missing string: {details.ElementAt(0)}";
-                                if (!warnings.Contains(message))
-                                    warnings.Add(message);
+                                warnings.Add(message);
                                 break;
 
                             case TgWWMessageCode.UnknownString:
                                 message = $"{line}Unknown string: {details.ElementAt(0)}";
-                                if (!warnings.Contains(message))
-                                    warnings.Add(message);
+                                warnings.Add(message);
                                 break;
 
                             case TgWWMessageCode.ExtraPlaceholder:
                                 message = $"{line}Extra {details.ElementAt(1)} in {details.ElementAt(0)}";
-                                if (!warnings.Contains(message))
-                                    warnings.Add(message);
+                                warnings.Add(message);
                                 break;
 
                             case TgWWMessageCode.MissingPlaceholder:
                                 message = $"{line}Missing {details.ElementAt(1)} in {details.ElementAt(0)}";
-                                if (!warnings.Contains(message))
-                                    warnings.Add(message);
+                                warnings.Add(message);
                                 break;
 
                             case TgWWMessageCode.DuplicatedString:
                                 message = $"{line}Multiple definitions of {details.ElementAt(0)}";
-                                if (!warnings.Contains(message))
-                                    warnings.Add(message);
+                                warnings.Add(message);
                                 break;
 
                             case TgWWMessageCode.TextOutsideValue:
                                 message = $"{line}Text outside of value tags\n  If this is a comment, it should be like this: <!-- COMMENT HERE -->";
-                                if (!warnings.Contains(message))
-                                    warnings.Add(message);
+                                warnings.Add(message);
                                 break;
                                 #endregion
                         }
@@ -434,25 +422,16 @@ namespace WuffPadServantBot
                 }
             }
 
-            // ❌ DON'T UPLOAD! This file has CRITICAL errors:
-            // ⚠️ This file CAN be uploaded, but it has flaws:
-            // It's up to the admins to decide whether the file should be uploaded like this!
-
             switch (success)
             {
                 case ValidationResult.HasErrors:
                     if (pm)
                     {
                         if (criticalErrors.Count > 5)
-                        {
-                            var path = Path.Combine(validationPath, "errors.txt");
-                            File.WriteAllText(path, response);
-                            using (var stream = File.OpenRead(path))
+                            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(response)))
                                 await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "errors.txt"), "❌ This file has CRITICAL errors!", replyToMessageId: msg.MessageId);
-                            File.Delete(path);
-                        }
-                        else await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
-
+                        else
+                            await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
                     }
                     else
                         await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ DON'T UPLOAD! This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
@@ -462,19 +441,13 @@ namespace WuffPadServantBot
                     if (pm)
                     {
                         if (warnings.Count > 5)
-                        {
-                            var path = Path.Combine(validationPath, "warnings.txt");
-                            File.WriteAllText(path, response);
-                            using (var stream = File.OpenRead(path))
+                            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(response)))
                                 await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "warnings.txt"), "⚠️ This file CAN be uploaded, but it has flaws you should fix first!", replyToMessageId: msg.MessageId);
-                            File.Delete(path);
-                        }
-                        else await Bot.SendTextMessageAsync(msg.Chat.Id, $"⚠️ This file CAN be uploaded, but it has flaws you should fix first:\n\n{response}", replyToMessageId: msg.MessageId);
+                        else
+                            await Bot.SendTextMessageAsync(msg.Chat.Id, $"⚠️ This file CAN be uploaded, but it has flaws you should fix first:\n\n{response}", replyToMessageId: msg.MessageId);
                     }
                     else
-                    {
                         await Bot.SendTextMessageAsync(msg.Chat.Id, $"⚠️ This file CAN be uploaded, but it has flaws:\n\n{response}", replyToMessageId: msg.MessageId);
-                    }
                     return true;
 
                 case ValidationResult.Perfect:
