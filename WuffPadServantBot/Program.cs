@@ -274,7 +274,7 @@ namespace WuffPadServantBot
                     var lineNumber = (long)err[0];
                     var desc = (string)err[1];
 
-                    var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
+                    var line = lineNumber == 0 ? "" : $"Line {lineNumber}: ";
 
                     var error = line + desc;
                     criticalErrors.Add(error);
@@ -290,7 +290,7 @@ namespace WuffPadServantBot
                         var lineNumber = (long)mess[1]; // this needs to be long... I don't ask why
                         var details = ((JArray)mess[2]).ToObject<object[]>();
 
-                        var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
+                        var line = lineNumber == 0 ? "" : $"Line {lineNumber}: ";
 
                         switch (messageCode)
                         {
