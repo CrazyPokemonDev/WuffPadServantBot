@@ -262,8 +262,9 @@ namespace WuffPadServantBot
 
             var result = JsonConvert.DeserializeObject<TgWWResult>(stdout);
 
-            List<string> warnings = new List<string>();
-            List<string> criticalErrors = new List<string>();
+            var warnings = new List<string>();
+            var criticalErrors = new List<string>();
+            var missingStrings = new List<string>();
 
             var a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.TargetFile);
             if (a != null)
@@ -327,8 +328,7 @@ namespace WuffPadServantBot
 
                             #region Warnings
                             case TgWWMessageCode.MissingString:
-                                message = $"{line}Missing string: {details.ElementAt(0)}";
-                                warnings.Add(message);
+                                missingStrings.Add((string)details.ElementAt(0));
                                 break;
 
                             case TgWWMessageCode.UnknownString:
@@ -371,14 +371,29 @@ namespace WuffPadServantBot
                 if (criticalErrors.Count > 5 && !pm) response += $"\nAnd {criticalErrors.Count - 5} more critical error(s).";
                 if (!pm) response += $"\n\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
             }
-            else if (warnings.Any())
+            else if (warnings.Any() || missingStrings.Any())
             {
                 success = ValidationResult.HasWarnings;
 
                 response = string.Join("\n", pm ? warnings : warnings.Take(5)); // in the group, only show up to 5 warnings
-                if (warnings.Count > 5 && !pm) response += $"\nAnd {warnings.Count - 5} more warning(s)." +
-                        $"\n\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.";
-                response += "\n\nIt's up to the admins to decide whether the file should be uploaded like this!";
+                if (pm || missingStrings.Count <= 1)
+                    foreach (var stringId in missingStrings)
+                        response += $"\nMissing string: {stringId}";
+                else
+                {
+                    response += "\nMissing strings: ";
+                    response += string.Join(", ", missingStrings.Take(5));
+                    if (missingStrings.Count > 5)
+                        response += $", and {missingStrings.Count - 5} more";
+                }
+                if (!pm)
+                {
+                    if (warnings.Count > 5)
+                        response += $"\nAnd {warnings.Count - 5} more warning(s).";
+                    if (warnings.Count > 5 || missingStrings.Count > 5)
+                        response += "\n\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.";
+                }
+                response += "\n\nIt’s up to the admins to decide whether the file should be uploaded like this!";
             }
             else
             {
@@ -434,13 +449,13 @@ namespace WuffPadServantBot
                             await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
                     }
                     else
-                        await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ DON'T UPLOAD! This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
+                        await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ DON’T UPLOAD! This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
                     return false;
 
                 case ValidationResult.HasWarnings:
                     if (pm)
                     {
-                        if (warnings.Count > 5)
+                        if (warnings.Count > 5 || missingStrings.Count > 5)
                             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(response)))
                                 await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "warnings.txt"), "⚠️ This file CAN be uploaded, but it has flaws you should fix first!", replyToMessageId: msg.MessageId);
                         else
