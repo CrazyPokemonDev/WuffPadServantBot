@@ -367,21 +367,22 @@ namespace WuffPadServantBot
             {
                 success = ValidationResult.HasErrors;
 
-                response = string.Join("\n", pm ? criticalErrors : criticalErrors.Take(5)); // in the group, only show up to 5 errors
-                if (criticalErrors.Count > 5 && !pm) response += $"\nAnd {criticalErrors.Count - 5} more critical error(s).";
+                response = "• " + string.Join("\n• ", pm ? criticalErrors : criticalErrors.Take(5)); // in the group, only show up to 5 errors
+                if (criticalErrors.Count > 5 && !pm) response += $"\n• And {criticalErrors.Count - 5} more critical error(s).";
                 if (!pm) response += $"\n\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
             }
             else if (warnings.Any() || missingStrings.Any())
             {
                 success = ValidationResult.HasWarnings;
 
-                response = string.Join("\n", pm ? warnings : warnings.Take(5)); // in the group, only show up to 5 warnings
+                response = warnings.Any() ? "• " : "";
+                response += string.Join("\n• ", pm ? warnings : warnings.Take(5)); // in the group, only show up to 5 warnings
                 if (pm || missingStrings.Count <= 1)
                     foreach (var stringId in missingStrings)
-                        response += $"\nMissing string: {stringId}";
+                        response += $"\n• Missing string: {stringId}";
                 else
                 {
-                    response += "\nMissing strings: ";
+                    response += "\n• Missing strings: ";
                     response += string.Join(", ", missingStrings.Take(5));
                     if (missingStrings.Count > 5)
                         response += $", and {missingStrings.Count - 5} more";
@@ -389,7 +390,7 @@ namespace WuffPadServantBot
                 if (!pm)
                 {
                     if (warnings.Count > 5)
-                        response += $"\nAnd {warnings.Count - 5} more warning(s).";
+                        response += $"\n• And {warnings.Count - 5} more warning(s).";
                     if (warnings.Count > 5 || missingStrings.Count > 5)
                         response += "\n\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.";
                 }
