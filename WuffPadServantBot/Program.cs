@@ -367,34 +367,45 @@ namespace WuffPadServantBot
             {
                 success = ValidationResult.HasErrors;
 
-                response = "• " + string.Join("\n• ", pm ? criticalErrors : criticalErrors.Take(5)); // in the group, only show up to 5 errors
-                if (criticalErrors.Count > 5 && !pm) response += $"\n• And {criticalErrors.Count - 5} more critical error(s).";
-                if (!pm) response += $"\n\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
+                response = "";
+                foreach (var err in pm ? criticalErrors : criticalErrors.Take(5)) // in the group, only show up to 5 errors
+                    response += "• " + err + "\n";
+
+                if (criticalErrors.Count > 5 && !pm) response += $"• And {criticalErrors.Count - 5} more critical error(s).\n";
+                if (!pm) response += $"\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
             }
             else if (warnings.Any() || missingStrings.Any())
             {
                 success = ValidationResult.HasWarnings;
 
-                response = warnings.Any() ? "• " : "";
-                response += string.Join("\n• ", pm ? warnings : warnings.Take(5)); // in the group, only show up to 5 warnings
-                if (pm || missingStrings.Count <= 1)
-                    foreach (var stringId in missingStrings)
-                        response += $"\n• Missing string: {stringId}";
-                else
+                response = "";
+                foreach (var warn in pm ? warnings : warnings.Take(5)) // in the group, only show up to 5 warnings
+                    response += "• " + warn + "\n";
+
+                if (pm || missingStrings.Count <= 1) // Show all missing strings in PM or at most one in the group
                 {
-                    response += "\n• Missing strings: ";
+                    foreach (var stringId in missingStrings)
+                        response += $"• Missing string: {stringId}\n";
+                }
+                else // Up to 5 missing strings are grouped to 1 warning line in the group
+                {
+                    response += $"• {missingStrings.Count} missing strings: ";
                     response += string.Join(", ", missingStrings.Take(5));
                     if (missingStrings.Count > 5)
                         response += $", and {missingStrings.Count - 5} more";
+                    response += "\n";
                 }
+
+
                 if (!pm)
                 {
                     if (warnings.Count > 5)
-                        response += $"\n• And {warnings.Count - 5} more warning(s).";
+                        response += $"• And {warnings.Count - 5} more warning(s).\n";
+
                     if (warnings.Count > 5 || missingStrings.Count > 5)
-                        response += "\n\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.";
+                        response += "\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.\n";
                 }
-                response += "\n\nIt’s up to the admins to decide whether the file should be uploaded like this!";
+                response += "\nIt’s up to the admins to decide whether the file should be uploaded like this!";
             }
             else
             {
