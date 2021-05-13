@@ -262,8 +262,9 @@ namespace WuffPadServantBot
 
             var result = JsonConvert.DeserializeObject<TgWWResult>(stdout);
 
-            List<string> warnings = new List<string>();
-            List<string> criticalErrors = new List<string>();
+            var warnings = new List<string>();
+            var criticalErrors = new List<string>();
+            var missingStrings = new List<string>();
 
             var a = result.Annotations.FirstOrDefault(x => x.File == TgWWFile.TargetFile);
             if (a != null)
@@ -273,7 +274,7 @@ namespace WuffPadServantBot
                     var lineNumber = (long)err[0];
                     var desc = (string)err[1];
 
-                    var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
+                    var line = lineNumber == 0 ? "" : $"Line {lineNumber}: ";
 
                     var error = line + desc;
                     criticalErrors.Add(error);
@@ -289,7 +290,7 @@ namespace WuffPadServantBot
                         var lineNumber = (long)mess[1]; // this needs to be long... I don't ask why
                         var details = ((JArray)mess[2]).ToObject<object[]>();
 
-                        var line = lineNumber == 0 ? "" : $"L{lineNumber}: ";
+                        var line = lineNumber == 0 ? "" : $"Line {lineNumber}: ";
 
                         switch (messageCode)
                         {
@@ -327,8 +328,7 @@ namespace WuffPadServantBot
 
                             #region Warnings
                             case TgWWMessageCode.MissingString:
-                                message = $"{line}Missing string: {details.ElementAt(0)}";
-                                warnings.Add(message);
+                                missingStrings.Add((string)details.ElementAt(0));
                                 break;
 
                             case TgWWMessageCode.UnknownString:
@@ -367,18 +367,45 @@ namespace WuffPadServantBot
             {
                 success = ValidationResult.HasErrors;
 
-                response = string.Join("\n", pm ? criticalErrors : criticalErrors.Take(5)); // in the group, only show up to 5 errors
-                if (criticalErrors.Count > 5 && !pm) response += $"\nAnd {criticalErrors.Count - 5} more critical error(s).";
-                if (!pm) response += $"\n\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
+                response = "";
+                foreach (var err in pm ? criticalErrors : criticalErrors.Take(5)) // in the group, only show up to 5 errors
+                    response += "• " + err + "\n";
+
+                if (criticalErrors.Count > 5 && !pm) response += $"• And {criticalErrors.Count - 5} more critical error(s).\n";
+                if (!pm) response += $"\nIf you want to see a list of errors, you can also send the file to me in PM for validation.";
             }
-            else if (warnings.Any())
+            else if (warnings.Any() || missingStrings.Any())
             {
                 success = ValidationResult.HasWarnings;
 
-                response = string.Join("\n", pm ? warnings : warnings.Take(5)); // in the group, only show up to 5 warnings
-                if (warnings.Count > 5 && !pm) response += $"\nAnd {warnings.Count - 5} more warning(s)." +
-                        $"\n\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.";
-                response += "\n\nIt's up to the admins to decide whether the file should be uploaded like this!";
+                response = "";
+                foreach (var warn in pm ? warnings : warnings.Take(5)) // in the group, only show up to 5 warnings
+                    response += "• " + warn + "\n";
+
+                if (pm || missingStrings.Count <= 1) // Show all missing strings in PM or at most one in the group
+                {
+                    foreach (var stringId in missingStrings)
+                        response += $"• Missing string: {stringId}\n";
+                }
+                else // Up to 5 missing strings are grouped to 1 warning line in the group
+                {
+                    response += $"• {missingStrings.Count} missing strings: ";
+                    response += string.Join(", ", missingStrings.Take(5));
+                    if (missingStrings.Count > 5)
+                        response += $", and {missingStrings.Count - 5} more";
+                    response += "\n";
+                }
+
+
+                if (!pm)
+                {
+                    if (warnings.Count > 5)
+                        response += $"• And {warnings.Count - 5} more warning(s).\n";
+
+                    if (warnings.Count > 5 || missingStrings.Count > 5)
+                        response += "\nIf you want to see a full list of warnings, you can send the file to me in PM for validation.\n";
+                }
+                response += "\nIt’s up to the admins to decide whether the file should be uploaded like this!";
             }
             else
             {
@@ -434,13 +461,13 @@ namespace WuffPadServantBot
                             await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
                     }
                     else
-                        await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ DON'T UPLOAD! This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
+                        await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ DON’T UPLOAD! This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
                     return false;
 
                 case ValidationResult.HasWarnings:
                     if (pm)
                     {
-                        if (warnings.Count > 5)
+                        if (warnings.Count > 5 || missingStrings.Count > 5)
                             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(response)))
                                 await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "warnings.txt"), "⚠️ This file CAN be uploaded, but it has flaws you should fix first!", replyToMessageId: msg.MessageId);
                         else
