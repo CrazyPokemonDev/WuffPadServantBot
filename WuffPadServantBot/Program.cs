@@ -235,6 +235,7 @@ namespace WuffPadServantBot
         {
             var pm = msg.Chat.Type == ChatType.Private;
 
+            Directory.CreateDirectory(validationPath);
             var filepath = Path.Combine(validationPath, msg.Document.FileName);
             using (var stream = File.OpenWrite(filepath))
             {
