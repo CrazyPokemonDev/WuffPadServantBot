@@ -30,6 +30,7 @@ namespace WuffPadServantBot
         private const string authenticationFile = "C:\\Olfi01\\WuffPad\\auth.txt";
         private const string validationPath = "C:\\Olfi01\\WWValidation\\Files\\";
         private const string tgwwlangFile = "C:\\Olfi01\\WWValidation\\TgWWLang\\tgwwlang.py";
+        private const string pythonPath = "C:\\Olfi01\\WWValidation\\venv\\Scripts\\python.exe";
 
         static void Main(string[] args)
         {
@@ -244,7 +245,7 @@ namespace WuffPadServantBot
 
             var psi = new ProcessStartInfo()
             {
-                FileName = "py.exe",
+                FileName = pythonPath,
                 Arguments = $"\"{tgwwlangFile}\" check --json --model \"English.xml\" -- \"{msg.Document.FileName}\"",
                 CreateNoWindow = true,
                 UseShellExecute = false,
