@@ -39,9 +39,12 @@ namespace WuffPadServantBot
             ? Path.Combine(basePath, "WWValidation", "venv", "Scripts", "python.exe")
             : Path.Combine(basePath, "WWValidation", "venv", "bin", "python");
 
+        private static readonly string tokenPath = Path.Combine(basePath, "Token.txt");
+
         static void Main(string[] args)
         {
-            Bot = new TelegramBotClient(args[0]);
+            string token = File.ReadAllText(tokenPath).Trim();
+            Bot = new TelegramBotClient(token);
 
             Bot.StartReceiving(
                 async (sender, u, token) => { await OnUpdate(sender, u, token); },
