@@ -7,13 +7,12 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
 using Telegram.Bot;
-using Telegram.Bot.Args;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.InputFiles;
 using WuffPadServantBot.XMLClasses;
 using File = System.IO.File;
 
@@ -36,60 +35,72 @@ namespace WuffPadServantBot
         {
             Bot = new TelegramBotClient(args[0]);
 
-            Bot.OnMessage += async (sender, e) => await OnMessage(sender, e);
-            Bot.OnCallbackQuery += async (sender, e) => await WuffpadAuthenticator(sender, e);
-
-            Bot.StartReceiving();
+            Bot.StartReceiving(
+                async (sender, u, token) => { await OnUpdate(sender, u, token); },
+                (sender, exc, token) => { }
+            );
 
             string input;
             do
             {
                 input = Console.ReadLine();
             } while (input.ToLower() != "exit");
-
-            Bot.StopReceiving();
         }
 
-        private static async Task OnMessage(object sender, MessageEventArgs e)
+        private static async Task OnUpdate(Object sender, Update u, CancellationToken token)
         {
-            if (e.Message.Type != MessageType.Document) return;
-            if (Path.GetExtension(e.Message.Document.FileName).ToLower() != ".xml") return;
-
-            if (e.Message.Document.FileName.ToLower() == "english.xml")
+            switch (u.Type)
             {
-                await Bot.SendTextMessageAsync(e.Message.Chat.Id, "ℹ️ English.xml detected, skipping validation.", replyToMessageId: e.Message.MessageId);
+                case UpdateType.Message:
+                    await OnMessage(sender, u.Message);
+                    return;
+
+                case UpdateType.CallbackQuery:
+                    await WuffpadAuthenticator(sender, u.CallbackQuery);
+                    return;
+            }
+        }
+
+        private static async Task OnMessage(object sender, Message msg)
+        {
+            if (msg.Type != MessageType.Document) return;
+            if (Path.GetExtension(msg.Document.FileName).ToLower() != ".xml") return;
+
+            if (msg.Document.FileName.ToLower() == "english.xml")
+            {
+                await Bot.SendTextMessageAsync(msg.Chat.Id, "ℹ️ English.xml detected, skipping validation.", replyToMessageId: msg.MessageId);
                 return;
             }
 
-            var res = await ValidateLanguageFile(e.Message);
+            var res = await ValidateLanguageFile(msg);
             if (!res) // the file has critical errors, do not create Shcreibfelher (if the file is Deutsch.xml)
                 return;
 
-            if (e.Message.Document.FileName == "Deutsch.xml")
-                await ShcreibfelherMaker(e);
+            if (msg.Document.FileName == "Deutsch.xml")
+                await ShcreibfelherMaker(msg);
         }
 
         #region Authenticator
-        private static async Task WuffpadAuthenticator(object sender, CallbackQueryEventArgs e)
+        private static async Task WuffpadAuthenticator(object sender, CallbackQuery call)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(authenticationFile));
-            if (!e.CallbackQuery.Data.StartsWith("auth:"))
+            if (!call.Data.StartsWith("auth:"))
             {
-                if (e.CallbackQuery.Data != "dontauth") return;
-                await Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Denied authorization.");
+                if (call.Data != "dontauth") return;
+                await Bot.EditMessageTextAsync(call.Message.Chat.Id, call.Message.MessageId, "Denied authorization.");
                 return;
             }
-            var token = e.CallbackQuery.Data.Substring("auth:".Length);
-            var userId = e.CallbackQuery.From.Id;
+            var token = call.Data.Substring("auth:".Length);
+            var userId = call.From.Id;
             if (!File.Exists(authenticationFile)) File.WriteAllText(authenticationFile, "{}");
-            Dictionary<int, (List<string>, UserInfo)> authentication = JsonConvert.DeserializeObject<Dictionary<int, (List<string>, UserInfo)>>(File.ReadAllText(authenticationFile));
+            Dictionary<long, (List<string>, UserInfo)> authentication = JsonConvert.DeserializeObject<Dictionary<long, (List<string>, UserInfo)>>(File.ReadAllText(authenticationFile));
             if (!authentication.ContainsKey(userId)) authentication[userId] = (new List<string>(), new UserInfo());
             authentication[userId].Item1.Add(token);
-            authentication[userId].Item2.Name = string.Join(" ", e.CallbackQuery.From.FirstName, e.CallbackQuery.From.LastName);
-            authentication[userId].Item2.Username = e.CallbackQuery.From.Username ?? "no username";
+            authentication[userId].Item2.Name = string.Join(" ", call.From.FirstName, call.From.LastName);
+            authentication[userId].Item2.Username = call.From.Username ?? "no username";
             File.WriteAllText(authenticationFile, JsonConvert.SerializeObject(authentication));
-            await Bot.AnswerCallbackQueryAsync(e.CallbackQuery.Id, "Successfully verified your user!", showAlert: true);
-            await Bot.EditMessageTextAsync(e.CallbackQuery.Message.Chat.Id, e.CallbackQuery.Message.MessageId, "Authorized!");
+            await Bot.AnswerCallbackQueryAsync(call.Id, "Successfully verified your user!", showAlert: true);
+            await Bot.EditMessageTextAsync(call.Message.Chat.Id, call.Message.MessageId, "Authorized!");
         }
 
         private class UserInfo
@@ -101,14 +112,14 @@ namespace WuffPadServantBot
         #endregion
 
         #region Shcreibfelher
-        private static async Task ShcreibfelherMaker(MessageEventArgs e)
+        private static async Task ShcreibfelherMaker(Message msg)
         {
             Console.WriteLine("Received a Deutsch.xml file to randify!");
             Console.WriteLine("Downloading...");
             if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             using (var stream = File.OpenWrite(tempFilePath))
             {
-                await Bot.DownloadFileAsync(Bot.GetFileAsync(e.Message.Document.FileId).Result.FilePath, stream);
+                await Bot.DownloadFileAsync(Bot.GetFileAsync(msg.Document.FileId).Result.FilePath, stream);
             }
             Console.WriteLine("Processing...");
             XmlStrings newFile = MakeNewFile();
@@ -122,11 +133,8 @@ namespace WuffPadServantBot
             Console.WriteLine("Sending...");
             using (var stream = File.OpenRead("Deutsch Shcreibfelher.xml"))
             {
-                InputOnlineFile sendFile = new InputOnlineFile(stream)
-                {
-                    FileName = "Deutsch Shcreibfelher.xml"
-                };
-                await Bot.SendDocumentAsync(e.Message.Chat.Id, sendFile, caption: e.Message.Caption == null ? null : Randify(e.Message.Caption));
+                InputFileStream sendFile = new InputFileStream(stream, "Deutsch Shcreibfelher.xml");
+                await Bot.SendDocumentAsync(msg.Chat.Id, sendFile, caption: msg.Caption == null ? null : Randify(msg.Caption));
             }
 
             Console.WriteLine("Cleaning up...");
@@ -458,7 +466,7 @@ namespace WuffPadServantBot
                     {
                         if (criticalErrors.Count > 5)
                             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(response)))
-                                await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "errors.txt"), "❌ This file has CRITICAL errors!", replyToMessageId: msg.MessageId);
+                                await Bot.SendDocumentAsync(msg.Chat.Id, new InputFileStream(stream, "errors.txt"), caption: "❌ This file has CRITICAL errors!", replyToMessageId: msg.MessageId);
                         else
                             await Bot.SendTextMessageAsync(msg.Chat.Id, $"❌ This file has CRITICAL errors:\n\n{response}", replyToMessageId: msg.MessageId);
                     }
@@ -471,7 +479,7 @@ namespace WuffPadServantBot
                     {
                         if (warnings.Count > 5 || missingStrings.Count > 5)
                             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(response)))
-                                await Bot.SendDocumentAsync(msg.Chat.Id, new InputOnlineFile(stream, "warnings.txt"), "⚠️ This file CAN be uploaded, but it has flaws you should fix first!", replyToMessageId: msg.MessageId);
+                                await Bot.SendDocumentAsync(msg.Chat.Id, new InputFileStream(stream, "warnings.txt"), caption: "⚠️ This file CAN be uploaded, but it has flaws you should fix first!", replyToMessageId: msg.MessageId);
                         else
                             await Bot.SendTextMessageAsync(msg.Chat.Id, $"⚠️ This file CAN be uploaded, but it has flaws you should fix first:\n\n{response}", replyToMessageId: msg.MessageId);
                     }
