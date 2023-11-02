@@ -26,10 +26,18 @@ namespace WuffPadServantBot
         private static readonly Regex number = new Regex(@"\d+");
         private static readonly Random rnd = new Random();
         private const int newValueCount = 3;
-        private const string authenticationFile = "C:\\Olfi01\\WuffPad\\auth.txt";
-        private const string validationPath = "C:\\Olfi01\\WWValidation\\Files\\";
-        private const string tgwwlangFile = "C:\\Olfi01\\WWValidation\\TgWWLang\\tgwwlang.py";
-        private const string pythonPath = "C:\\Olfi01\\WWValidation\\venv\\Scripts\\python.exe";
+
+        private static readonly string basePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WuffpadServantBot");
+
+        private static readonly string authenticationFile = Path.Combine(basePath, "auth.txt");
+        private static readonly string validationPath = Path.Combine(basePath, "WWValidation", "Files");
+        private static readonly string tgwwlangFile = Path.Combine(basePath, "WWValidation", "TgWWLang", "tgwwlang.py");
+
+        private static readonly string pythonPath = OperatingSystem.IsWindows()
+            ? Path.Combine(basePath, "WWValidation", "venv", "Scripts", "python.exe")
+            : Path.Combine(basePath, "WWValidation", "venv", "bin", "python");
 
         static void Main(string[] args)
         {
